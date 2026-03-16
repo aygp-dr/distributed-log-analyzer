@@ -1,0 +1,8 @@
+{:paths ["src"]
+ :deps {org.babashka/cli {:mvn/version "0.8.61"}}
+ :tasks
+ {:override-builtin true
+  run {:doc "Parse and analyze logs from distributed systems"
+       :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) *command-line-args*)}
+  scan {:doc "Scan current directory"
+        :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) ["--dir" "."])}}}
