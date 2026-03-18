@@ -1,0 +1,8 @@
+Jan 15 10:00:01 web01 nginx[1234]: INFO Request received request_id:req-100 duration:50ms
+Jan 15 10:00:02 web01 auth[5678]: ERROR Authentication failed for user admin request_id:req-100
+Jan 15 10:00:03 db01 postgres[9012]: WARN Slow query detected duration:2500ms request_id:req-101
+Jan 15 10:00:04 web01 nginx[1234]: INFO Request completed request_id:req-101 duration:3000ms
+Jan 15 10:00:05 web01 app[3456]: ERROR OutOfMemoryError: heap space request_id:req-102
+Jan 15 10:00:06 db01 postgres[9012]: Vacuum completed
+Jan 15 10:00:07 web01 app[3456]: DEBUG Connection pool stats: active=5 idle=15
+Jan 15 10:00:08 web01 nginx[1234]: ERROR Connection timeout request_id:req-103 duration:30000ms

@@ -2,7 +2,13 @@
  :deps {org.babashka/cli {:mvn/version "0.8.61"}}
  :tasks
  {:override-builtin true
-  run {:doc "Parse and analyze logs from distributed systems"
+  run {:doc "Analyze logs from distributed systems"
        :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) *command-line-args*)}
-  scan {:doc "Scan current directory"
-        :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) ["--dir" "."])}}}
+  test {:doc "Run tests"
+        :extra-paths ["test"]
+        :requires ([clojure.test :as t])
+        :task (do
+                (require 'distributed_log_analyzer.core-test)
+                (let [{:keys [fail error]} (t/run-tests 'distributed_log_analyzer.core-test)]
+                  (when (pos? (+ fail error))
+                    (System/exit 1))))}}}
