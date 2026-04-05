@@ -1,0 +1,61 @@
+#+TITLE: distributed-log-analyzer — Seven Concerns Mapping
+#+AUTHOR: jwalsh
+#+DATE: 2026-04-05
+#+OPTIONS: toc:2 num:nil
+#+STARTUP: content
+
+* Overview
+
+Parse and analyze logs from distributed systems. Built with Babashka/Clojure.
+
+See =spec.org= for the project-specific specification (scope, architecture, build order).
+This document maps the project to the Seven Concerns of Agentic Work framework.
+
+* Seven Concerns Mapping
+
+The Seven Concerns stack (L1-L7) structures agentic work from raw task execution
+through multi-agent coordination. Each project addresses some concerns directly
+and depends on others implicitly.
+
+| L | Concern      | Status   | Notes                                       |
+|---+--------------+----------+---------------------------------------------|
+| 7 | Coordination | —       | Single-agent; no coordination layer |
+| 6 | Discovery    | —       | No playbook resolution |
+| 5 | Control      | Primary | Parse and analyze logs from distributed systems |
+| 4 | Validation   | Secondary| Output correctness verification |
+| 3 | Reasoning    | —       | No explicit reasoning trail |
+| 2 | Memory       | —       | No cross-session memory |
+| 1 | Work         | Implicit | Build, test, and run targets in Makefile |
+
+Primary concern: *L5 Measurement*
+Secondary concern: *L4 Validation*
+
+* Relationship to spec.org
+
+The project-specific =spec.org= contains:
+- Foundational axiom and anti-goals
+- Architectural decisions with status tracking
+- Build order (priority-ordered implementation steps)
+- Open conjectures with falsification criteria
+- Stack preferences and success criteria
+
+This =SPEC.org= adds the seven-concerns lens on top of that specification.
+
+* Cross-Cuts
+
+Cross-cutting concerns that run vertically through all seven layers:
+
+| Cross-Cut     | Status in This Project                                |
+|---------------+-------------------------------------------------------|
+| Legibility    | CLAUDE.md present; spec.org documents decisions |
+| Resilience    | Test suite present |
+| Specification | spec.org provides formal project specification        |
+| Human Signal  | CLI/TUI provides human interaction surface |
+| Isolation     | Babashka process; JVM-level isolation |
+| Provenance    | Git-tracked; append-only commit history               |
+
+* Open Questions
+
+- [ ] Which layers are currently addressed only implicitly?
+- [ ] What would it take to make L5 Measurement explicit and testable?
+- [ ] Where does this project sit on the vibe-coding → formal-spec ladder?
