@@ -35,6 +35,15 @@
       (is (= "t-1" (:request-id entry)))
       (is (= 300 (:duration-ms entry))))))
 
+(deftest test-parse-json-non-numeric-duration
+  (testing "a non-numeric duration field is skipped, not passed through"
+    (is (= 12 (:duration-ms (core/parse-line "{\"message\":\"x\",\"duration_ms\":\"\",\"latency_ms\":12}"))))
+    (is (nil? (:duration-ms (core/parse-line "{\"message\":\"x\",\"duration_ms\":\"250\"}")))))
+  (testing "latency stats survive a mix of numeric and string durations"
+    (let [entries (mapv core/parse-line ["{\"message\":\"ok\",\"duration_ms\":12}"
+                                         "{\"message\":\"slow\",\"duration_ms\":\"250\"}"])]
+      (is (= 1 (:count (core/latency-percentiles entries)))))))
+
 (deftest test-parse-syslog-line
   (testing "parses syslog line with level"
     (let [entry (core/parse-line "Jan 15 10:00:01 web01 nginx[1234]: ERROR Request failed request_id:req-100")]

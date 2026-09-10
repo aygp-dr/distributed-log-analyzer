@@ -19,9 +19,8 @@
          :message (or (:message m) (:msg m) (:error m) "")
          :request-id (or (:request_id m) (:correlation_id m)
                          (:trace_id m) (:x_request_id m))
-         :duration-ms (or (:duration_ms m) (:latency_ms m)
-                          (when-let [d (:duration m)] (when (number? d) d))
-                          (when-let [d (:response_time m)] (when (number? d) d)))
+         :duration-ms (some #(when (number? %) %)
+                            [(:duration_ms m) (:latency_ms m) (:duration m) (:response_time m)])
          :raw m}))
     (catch Exception _ nil)))
 
