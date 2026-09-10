@@ -1,7 +1,12 @@
 (ns distributed_log_analyzer.core-test
-  (:require [clojure.test :refer [deftest is testing run-tests]]
+  (:require [clojure.spec.test.alpha :as stest]
+            [clojure.test :refer [deftest is testing run-tests use-fixtures]]
             [distributed_log_analyzer.core :as core]
             [clojure.string :as str]))
+
+;; Exercise every s/fdef :args spec while the unit tests run.
+(use-fixtures :once
+  (fn [f] (stest/instrument) (try (f) (finally (stest/unstrument)))))
 
 (def sample-json-lines
   ["{\"timestamp\":\"2024-01-15T10:00:01Z\",\"level\":\"INFO\",\"message\":\"Server started\",\"request_id\":\"req-001\",\"duration_ms\":5}"
@@ -29,6 +34,15 @@
       (is (= "slow" (:message entry)))
       (is (= "t-1" (:request-id entry)))
       (is (= 300 (:duration-ms entry))))))
+
+(deftest test-parse-json-non-numeric-duration
+  (testing "a non-numeric duration field is skipped, not passed through"
+    (is (= 12 (:duration-ms (core/parse-line "{\"message\":\"x\",\"duration_ms\":\"\",\"latency_ms\":12}"))))
+    (is (nil? (:duration-ms (core/parse-line "{\"message\":\"x\",\"duration_ms\":\"250\"}")))))
+  (testing "latency stats survive a mix of numeric and string durations"
+    (let [entries (mapv core/parse-line ["{\"message\":\"ok\",\"duration_ms\":12}"
+                                         "{\"message\":\"slow\",\"duration_ms\":\"250\"}"])]
+      (is (= 1 (:count (core/latency-percentiles entries)))))))
 
 (deftest test-parse-syslog-line
   (testing "parses syslog line with level"
@@ -204,6 +218,13 @@
       (is (contains? (core/analyze entries {:command "latency-percentiles"}) :latency))
       (is (contains? (core/analyze entries {:command "correlation-trace" :correlation-id "req-001"})
                      :correlation-trace)))))
+
+(deftest test-analyze-without-top
+  (testing "analyze falls back to top-errors' default of 10 when :top is absent"
+    (let [entries (mapv core/parse-line sample-json-lines)]
+      (is (= 0 (:total (core/analyze [] {}))))
+      (is (= 1 (count (:top-errors (core/analyze entries {:command "analyze"})))))
+      (is (= 1 (count (:top-errors (core/analyze entries {:command "top-errors"}))))))))
 
 ;;; --- Mixed Format ---
 

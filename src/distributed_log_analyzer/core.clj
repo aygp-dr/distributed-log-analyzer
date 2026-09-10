@@ -1,8 +1,10 @@
 (ns distributed_log_analyzer.core
   (:require [babashka.cli :as cli]
             [babashka.fs :as fs]
+            [clojure.spec.alpha :as s]
             [clojure.string :as str]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [distributed_log_analyzer.specs :as specs]))
 
 ;;; --- Log Parsing ---
 
@@ -17,11 +19,15 @@
          :message (or (:message m) (:msg m) (:error m) "")
          :request-id (or (:request_id m) (:correlation_id m)
                          (:trace_id m) (:x_request_id m))
-         :duration-ms (or (:duration_ms m) (:latency_ms m)
-                          (when-let [d (:duration m)] (when (number? d) d))
-                          (when-let [d (:response_time m)] (when (number? d) d)))
+         :duration-ms (some #(when (number? %) %)
+                            [(:duration_ms m) (:latency_ms m) (:duration m) (:response_time m)])
          :raw m}))
     (catch Exception _ nil)))
+
+(s/fdef parse-json-line
+  :args (s/cat :line ::specs/line-text)
+  :ret (s/nilable ::specs/entry)
+  :fn (fn [{ret :ret}] (or (nil? ret) (= :json (:format ret)))))
 
 (def syslog-pattern
   #"^(\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+?)(?:\[(\d+)\])?:\s+(?:(DEBUG|INFO|NOTICE|WARNING|WARN|ERROR|CRIT|ALERT|EMERG)\s+)?(.*)$")
@@ -40,6 +46,11 @@
        :duration-ms (when-let [d (second (re-find #"(?:duration|latency|took)[=:](\d+(?:\.\d+)?)\s*ms" message))]
                       (Double/parseDouble d))
        :raw line})))
+
+(s/fdef parse-syslog-line
+  :args (s/cat :line ::specs/line-text)
+  :ret (s/nilable ::specs/entry)
+  :fn (fn [{ret :ret}] (or (nil? ret) (= :syslog (:format ret)))))
 
 (def access-log-pattern
   #"^(\S+)\s+(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\"(\S+)\s+(\S+)\s+(\S+)\"\s+(\d{3})\s+(\d+|-)\s*(.*)$")
@@ -67,6 +78,11 @@
        :duration-ms duration
        :raw line})))
 
+(s/fdef parse-access-log-line
+  :args (s/cat :line ::specs/line-text)
+  :ret (s/nilable ::specs/entry)
+  :fn (fn [{ret :ret}] (or (nil? ret) (= :access-log (:format ret)))))
+
 (defn parse-line [line]
   (let [trimmed (str/trim line)]
     (when-not (str/blank? trimmed)
@@ -78,10 +94,22 @@
            :level "UNKNOWN"
            :raw line}))))
 
+(s/fdef parse-line
+  :args (s/cat :line ::specs/line-text)
+  :ret (s/nilable ::specs/entry)
+  :fn (fn [{{:keys [line]} :args ret :ret}]
+        (= (nil? ret) (str/blank? line))))
+
 ;;; --- Analysis ---
 
 (defn count-by-level [entries]
   (frequencies (map :level entries)))
+
+(s/fdef count-by-level
+  :args (s/cat :entries ::specs/entries)
+  :ret ::specs/count-by-level
+  :fn (fn [{{:keys [entries]} :args ret :ret}]
+        (= (count entries) (reduce + 0 (vals ret)))))
 
 (defn top-errors [entries & [{:keys [n] :or {n 10}}]]
   (->> entries
@@ -91,6 +119,13 @@
        (sort-by :count >)
        (take n)
        vec))
+
+(s/fdef top-errors
+  :args (s/cat :entries ::specs/entries :opts (s/? (s/nilable ::specs/top-errors-opts)))
+  :ret ::specs/top-errors
+  :fn (fn [{{:keys [opts]} :args ret :ret}]
+        (and (<= (count ret) (or (:n opts) 10))
+             (or (empty? ret) (apply >= (map :count ret))))))
 
 (defn latency-percentiles [entries]
   (let [durations (->> entries
@@ -110,10 +145,25 @@
          :p95 (pct 0.95)
          :p99 (pct 0.99)}))))
 
+(s/fdef latency-percentiles
+  :args (s/cat :entries ::specs/entries)
+  :ret ::specs/latency
+  :fn (fn [{{:keys [entries]} :args ret :ret}]
+        (and (= (count (keep :duration-ms entries)) (:count ret))
+             (or (zero? (:count ret))
+                 (<= (:min ret) (:p50 ret) (:p90 ret) (:p95 ret) (:p99 ret) (:max ret))))))
+
 (defn correlation-id-trace [entries id]
   (->> entries
        (filter #(= id (:request-id %)))
        vec))
+
+(s/fdef correlation-id-trace
+  :args (s/cat :entries ::specs/entries :id ::specs/request-id)
+  :ret ::specs/correlation-trace
+  :fn (fn [{{:keys [entries id]} :args ret :ret}]
+        (and (<= (count ret) (count entries))
+             (every? #(= id (:request-id %)) ret))))
 
 (defn group-by-correlation [entries]
   (->> entries
@@ -128,6 +178,13 @@
        (sort-by :count >)
        vec))
 
+(s/fdef group-by-correlation
+  :args (s/cat :entries ::specs/entries)
+  :ret ::specs/correlation-ids
+  :fn (fn [{{:keys [entries]} :args ret :ret}]
+        (and (= (count (filter :request-id entries)) (reduce + 0 (map :count ret)))
+             (or (empty? ret) (apply >= (map :count ret))))))
+
 ;;; --- Time Filtering ---
 
 (defn in-time-range? [entry {:keys [after before]}]
@@ -136,6 +193,12 @@
       true
       (and (or (nil? after) (>= (compare (str ts) (str after)) 0))
            (or (nil? before) (<= (compare (str ts) (str before)) 0))))))
+
+(s/fdef in-time-range?
+  :args (s/cat :entry ::specs/entry :window ::specs/time-window)
+  :ret boolean?
+  :fn (fn [{{:keys [entry]} :args ret :ret}]
+        (or (some? (:timestamp entry)) ret)))
 
 ;;; --- Output ---
 
@@ -177,6 +240,11 @@
 
     (str sb)))
 
+(s/fdef format-text-report
+  :args (s/cat :report ::specs/report)
+  :ret string?
+  :fn (fn [{ret :ret}] (str/starts-with? ret "=== Log Analysis Report ===")))
+
 ;;; --- CLI ---
 
 (def cli-spec
@@ -197,10 +265,14 @@
                 (str/split-lines (slurp f))))
             sources)))
 
+(s/fdef read-lines
+  :args (s/cat :sources (s/coll-of string?))
+  :ret (s/coll-of string?))
+
 (defn analyze [entries {:keys [command correlation-id top]}]
   (case command
     "count-by-level" {:count-by-level (count-by-level entries)}
-    "top-errors" {:top-errors (top-errors entries {:n top})}
+    "top-errors" {:top-errors (top-errors entries (when top {:n top}))}
     "latency-percentiles" {:latency (latency-percentiles entries)}
     "correlation-trace" (if correlation-id
                           {:correlation-trace (correlation-id-trace entries correlation-id)}
@@ -208,9 +280,18 @@
     ;; default: full analysis
     {:total (count entries)
      :count-by-level (count-by-level entries)
-     :top-errors (top-errors entries {:n top})
+     :top-errors (top-errors entries (when top {:n top}))
      :latency (latency-percentiles entries)
      :correlation-ids (group-by-correlation entries)}))
+
+(s/fdef analyze
+  :args (s/cat :entries ::specs/entries :opts ::specs/analyze-opts)
+  :ret ::specs/analysis
+  :fn (fn [{{:keys [entries opts]} :args ret :ret}]
+        (if (#{"count-by-level" "top-errors" "latency-percentiles" "correlation-trace"}
+             (:command opts))
+          (= 1 (count ret))
+          (= (count entries) (:total ret)))))
 
 (defn -main [& args]
   (let [{:keys [opts args]} (cli/parse-args args {:spec cli-spec})
@@ -251,6 +332,9 @@
       (flush)
       (let [error-count (get-in result [:count-by-level "ERROR"] 0)]
         (System/exit (if (pos? error-count) 1 0))))))
+
+(s/fdef -main
+  :args (s/* string?))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))

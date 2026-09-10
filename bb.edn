@@ -1,14 +1,39 @@
-{:paths ["src"]
- :deps {org.babashka/cli {:mvn/version "0.8.61"}}
+{:min-bb-version "1.12.0"
+ ;; runtime deps + :paths come from deps.edn (the canonical manifest)
+ :deps {local/project {:local/root "."}}
  :tasks
- {:override-builtin true
-  run {:doc "Analyze logs from distributed systems"
-       :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) *command-line-args*)}
-  test {:doc "Run tests"
-        :extra-paths ["test"]
-        :requires ([clojure.test :as t])
-        :task (do
-                (require 'distributed_log_analyzer.core-test)
-                (let [{:keys [fail error]} (t/run-tests 'distributed_log_analyzer.core-test)]
-                  (when (pos? (+ fail error))
-                    (System/exit 1))))}}}
+ {:requires ([babashka.fs :as fs])
+  :init (do (def src-dirs (filterv fs/directory? ["src" "test" "dev"]))
+            (defn test-nses []
+              ;; read the ns name from each file: this repo's namespaces
+              ;; (distributed_log_analyzer.core-test) can't be derived from the path
+              (->> (fs/glob "test" "**_test.clj")
+                   (map (fn [p] (second (read-string (slurp (str p))))))
+                   sort)))
+
+  run     {:override-builtin true
+           :doc "Analyze logs from distributed systems"
+           :task (apply (requiring-resolve 'distributed_log_analyzer.core/-main) *command-line-args*)}
+
+  test    {:doc "Run the test suite on the JVM (clojure -M:test)"
+           :task (apply shell "clojure -M:test" *command-line-args*)}
+
+  test:bb {:doc "Run the same test namespaces under babashka"
+           :extra-paths ["test"]
+           :task (let [nses (test-nses)]
+                   (apply require nses)
+                   (let [{:keys [fail error]} (apply clojure.test/run-tests nses)]
+                     (when (pos? (+ fail error))
+                       (throw (ex-info "bb tests failed" {:fail fail :error error})))))}
+
+  lint    {:doc "Lint with clj-kondo (fails on errors, reports warnings)"
+           :task (apply shell "clojure -M:lint --fail-level error --lint" src-dirs)}
+
+  fmt     {:doc "Check formatting with cljfmt"
+           :task (apply shell "clojure -M:fmt check" src-dirs)}
+
+  fmt:fix {:doc "Fix formatting with cljfmt"
+           :task (apply shell "clojure -M:fmt fix" src-dirs)}
+
+  check   {:doc "lint + fmt + test + test:bb (what CI runs)"
+           :depends [lint fmt test test:bb]}}}
