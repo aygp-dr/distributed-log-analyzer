@@ -272,7 +272,7 @@
 (defn analyze [entries {:keys [command correlation-id top]}]
   (case command
     "count-by-level" {:count-by-level (count-by-level entries)}
-    "top-errors" {:top-errors (top-errors entries {:n top})}
+    "top-errors" {:top-errors (top-errors entries (when top {:n top}))}
     "latency-percentiles" {:latency (latency-percentiles entries)}
     "correlation-trace" (if correlation-id
                           {:correlation-trace (correlation-id-trace entries correlation-id)}
@@ -280,7 +280,7 @@
     ;; default: full analysis
     {:total (count entries)
      :count-by-level (count-by-level entries)
-     :top-errors (top-errors entries {:n top})
+     :top-errors (top-errors entries (when top {:n top}))
      :latency (latency-percentiles entries)
      :correlation-ids (group-by-correlation entries)}))
 

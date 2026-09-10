@@ -219,6 +219,13 @@
       (is (contains? (core/analyze entries {:command "correlation-trace" :correlation-id "req-001"})
                      :correlation-trace)))))
 
+(deftest test-analyze-without-top
+  (testing "analyze falls back to top-errors' default of 10 when :top is absent"
+    (let [entries (mapv core/parse-line sample-json-lines)]
+      (is (= 0 (:total (core/analyze [] {}))))
+      (is (= 1 (count (:top-errors (core/analyze entries {:command "analyze"})))))
+      (is (= 1 (count (:top-errors (core/analyze entries {:command "top-errors"}))))))))
+
 ;;; --- Mixed Format ---
 
 (deftest test-mixed-formats
