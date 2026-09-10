@@ -7,12 +7,12 @@
 
 ;; --- Input: one log line (JSON, syslog, access log, or anything else) ---
 
-(def ^:private gen-json-value
+(defn- gen-json-value []
   (gen/one-of [(gen/string-alphanumeric) (gen/large-integer)
                (gen/double* {:NaN? false :infinite? false})
                (gen/boolean) (gen/return nil)]))
 
-(def ^:private gen-json-line
+(defn- gen-json-line []
   (gen/fmap (fn [[level msg [dk dv] [rk rv] ts]]
               (json/generate-string
                (cond-> {:message msg}
@@ -23,12 +23,12 @@
             (gen/tuple (gen/elements ["INFO" "error" "WARN" "debug" nil])
                        (gen/elements ["Server started" "Connection timeout" "Retry attempt" ""])
                        (gen/tuple (gen/elements [:duration_ms :latency_ms :duration :response_time nil])
-                                  gen-json-value)
+                                  (gen-json-value))
                        (gen/tuple (gen/elements [:request_id :correlation_id :trace_id nil])
-                                  gen-json-value)
+                                  (gen-json-value))
                        (gen/elements ["2024-01-15T10:00:01Z" "2024-01-15T10:00:05Z" nil]))))
 
-(def ^:private gen-syslog-line
+(defn- gen-syslog-line []
   (gen/fmap (fn [[day host svc pid level msg kv]]
               (str "Jan " day " 10:00:0" (mod day 10) " " host " " svc
                    (when pid (str "[" pid "]")) ": " (when level (str level " ")) msg kv))
@@ -40,7 +40,7 @@
                        (gen/elements ["" " request_id:req-100" " duration:2500ms"
                                       " took=12.5ms trace_id=t-9"]))))
 
-(def ^:private gen-access-line
+(defn- gen-access-line []
   (gen/fmap (fn [[ip method path status bytes tail]]
               (format "%s - - [15/Jan/2024:10:00:01 +0000] \"%s %s HTTP/1.1\" %d %s%s"
                       ip method path status bytes tail))
@@ -52,16 +52,16 @@
 ;; One line of text, as produced by clojure.string/split-lines or line-seq.
 (s/def ::line-text
   (s/with-gen (s/and string? #(not (re-find #"[\r\n]" %)))
-    #(gen/one-of [gen-json-line gen-syslog-line gen-access-line (gen/string-alphanumeric)])))
+    #(gen/one-of [(gen-json-line) (gen-syslog-line) (gen-access-line) (gen/string-alphanumeric)])))
 
 ;; --- Parsed entries (the output of parse-line) ---
 
-(def ^:private gen-finite-number
+(defn- gen-finite-number []
   (gen/one-of [(gen/large-integer* {:min 0 :max 100000})
                (gen/double* {:min 0 :max 100000 :NaN? false :infinite? false})]))
 
 (s/def ::finite-number
-  (s/with-gen (s/and number? (fn [x] (not (NaN? x)))) (constantly gen-finite-number)))
+  (s/with-gen (s/and number? (fn [x] (not (NaN? x)))) gen-finite-number))
 
 (s/def ::format #{:json :syslog :access-log :unknown})
 (s/def ::level (s/nilable (s/with-gen string? #(gen/elements ["INFO" "ERROR" "WARN" "DEBUG" "UNKNOWN"]))))
@@ -118,9 +118,9 @@
 
 ;; --- Options ---
 
-(def ^:private gen-ts-bound (gen/elements ["2024-01-15T10:00:02Z" "2024-01-15T10:00:04Z" "Jan 15"]))
-(s/def ::after (s/nilable (s/with-gen string? (constantly gen-ts-bound))))
-(s/def ::before (s/nilable (s/with-gen string? (constantly gen-ts-bound))))
+(defn- gen-ts-bound [] (gen/elements ["2024-01-15T10:00:02Z" "2024-01-15T10:00:04Z" "Jan 15"]))
+(s/def ::after (s/nilable (s/with-gen string? gen-ts-bound)))
+(s/def ::before (s/nilable (s/with-gen string? gen-ts-bound)))
 (s/def ::time-window (s/keys :opt-un [::after ::before]))
 
 (s/def ::n nat-int?)
