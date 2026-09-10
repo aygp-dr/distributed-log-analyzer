@@ -1,7 +1,12 @@
 (ns distributed_log_analyzer.core-test
-  (:require [clojure.test :refer [deftest is testing run-tests]]
+  (:require [clojure.spec.test.alpha :as stest]
+            [clojure.test :refer [deftest is testing run-tests use-fixtures]]
             [distributed_log_analyzer.core :as core]
             [clojure.string :as str]))
+
+;; Exercise every s/fdef :args spec while the unit tests run.
+(use-fixtures :once
+  (fn [f] (stest/instrument) (try (f) (finally (stest/unstrument)))))
 
 (def sample-json-lines
   ["{\"timestamp\":\"2024-01-15T10:00:01Z\",\"level\":\"INFO\",\"message\":\"Server started\",\"request_id\":\"req-001\",\"duration_ms\":5}"
