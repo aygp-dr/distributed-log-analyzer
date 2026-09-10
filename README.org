@@ -14,6 +14,29 @@ bb run --dir ./my-project --format json
 
 - Babashka v1.12+
 
+** Development
+
+This repo follows the aygp-dr Clojure standard: =deps.edn= is the canonical
+manifest and =bb.edn= provides the tasks.
+
+| Task                    | What it does                          |
+|-------------------------+---------------------------------------|
+| =bb test=               | JVM test suite (=clojure -M:test=)    |
+| =bb test:bb=            | the same tests under babashka         |
+| =bb lint=               | clj-kondo (fails on errors)           |
+| =bb fmt= / =bb fmt:fix= | cljfmt check / fix                    |
+| =bb check=              | lint + fmt + test + test:bb (CI runs this) |
+
+*** Specs
+
+Data specs (log lines, parsed entries, analysis results) live in
+=src/distributed_log_analyzer/specs.clj=, and each public fn in
+=distributed_log_analyzer.core= has an =s/fdef= right after its =defn= (see the
+[[https://clojure.org/guides/spec][clojure.spec guide]]).
+=test/distributed_log_analyzer/specs_test.clj= runs =stest/check= over every pure
+fn, feeding it generated JSON, syslog and access-log lines.
+The unit tests run with instrumentation on, and =clj -M:dev= instruments at the REPL.
+
 ** Status
 
 Scaffold -- see CLAUDE.md for implementation plan.
